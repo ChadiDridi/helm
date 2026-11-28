@@ -16,10 +16,13 @@ limitations under the License.
 package common
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	k8sversion "k8s.io/apimachinery/pkg/util/version"
+	k8sbaseversion "k8s.io/component-base/version"
 )
 
 func TestVersionSet(t *testing.T) {
@@ -39,14 +42,50 @@ func TestDefaultVersionSet(t *testing.T) {
 func TestDefaultCapabilities(t *testing.T) {
 	caps := DefaultCapabilities
 	kv := caps.KubeVersion
-	assert.Equalf(t, "v1.20.0", kv.String(), "Expected default KubeVersion.String() to be v1.20.0, got %q", kv.String())
-	assert.Equalf(t, "v1.20.0", kv.Version, "Expected default KubeVersion.Version to be v1.20.0, got %q", kv.Version)
-	assert.Equalf(t, "v1.20.0", kv.GitVersion(), "Expected default KubeVersion.GitVersion() to be v1.20.0, got %q", kv.Version)
-	assert.Equalf(t, "1", kv.Major, "Expected default KubeVersion.Major to be 1, got %q", kv.Major)
-	assert.Equalf(t, "20", kv.Minor, "Expected default KubeVersion.Minor to be 20, got %q", kv.Minor)
+	assert.Equal(t, "v"+k8sbaseversion.DefaultKubeBinaryVersion+".0", kv.String())
 
 	hv := caps.HelmVersion
-	assert.Equalf(t, "v4.2", hv.Version, "Expected default HelmVersion to be v4.2, got %q", hv.Version)
+	assert.Equalf(t, "v4.3", hv.Version, "Expected default HelmVersion to be v4.3, got %q", hv.Version)
+}
+
+// TestDefaultCapabilitiesFromKubeBinaryVersion exercises the production
+// version-derived calculation.
+func TestDefaultCapabilitiesFromKubeBinaryVersion(t *testing.T) {
+	expected := k8sversion.MustParseGeneric(k8sbaseversion.DefaultKubeBinaryVersion)
+	wantMajor := strconv.FormatUint(uint64(expected.Major()), 10)
+	wantMinor := strconv.FormatUint(uint64(expected.Minor()), 10)
+
+	caps, err := capabilitiesFromKubeBinaryVersion(k8sbaseversion.DefaultKubeBinaryVersion)
+	require.NoError(t, err)
+	assert.Equal(t, wantMajor, caps.KubeVersion.Major)
+	assert.Equal(t, wantMinor, caps.KubeVersion.Minor)
+	assert.Equal(t, "v"+wantMajor+"."+wantMinor+".0", caps.KubeVersion.Version)
+	assert.Equal(t, "v"+wantMajor+"."+wantMinor+".0", caps.KubeVersion.String())
+}
+
+func TestCapabilitiesFromKubeBinaryVersion(t *testing.T) {
+	tests := []struct {
+		input, major, minor, version string
+		wantErr                      bool
+	}{
+		{input: "1.36", major: "1", minor: "36", version: "v1.36.0"},
+		{input: "1.20.5", major: "1", minor: "20", version: "v1.20.0"},
+		{input: "not-a-version", wantErr: true},
+		{input: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			caps, err := capabilitiesFromKubeBinaryVersion(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.major, caps.KubeVersion.Major)
+			assert.Equal(t, tt.minor, caps.KubeVersion.Minor)
+			assert.Equal(t, tt.version, caps.KubeVersion.Version)
+		})
+	}
 }
 
 func TestParseKubeVersion(t *testing.T) {

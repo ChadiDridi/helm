@@ -20,7 +20,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"testing"
 
 	"github.com/Masterminds/semver/v3"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -28,13 +27,9 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	k8sversion "k8s.io/apimachinery/pkg/util/version"
+	k8sbaseversion "k8s.io/component-base/version"
 
 	helmversion "helm.sh/helm/v4/internal/version"
-)
-
-const (
-	kubeVersionMajorTesting = 1
-	kubeVersionMinorTesting = 20
 )
 
 var (
@@ -87,7 +82,9 @@ func (kv *KubeVersion) String() string {
 
 // GitVersion returns the full Kubernetes version string.
 //
-// Deprecated: use KubeVersion.Version.
+// Deprecated: Use KubeVersion.Version.
+//
+//go:fix inline
 func (kv *KubeVersion) GitVersion() string { return kv.Version }
 
 // ParseKubeVersion parses kubernetes version from string
@@ -142,27 +139,18 @@ func allKnownVersions() VersionSet {
 }
 
 func makeDefaultCapabilities() (*Capabilities, error) {
-	// Test builds don't include debug info / module info
-	// (And even if they did, we probably want stable capabilities for tests anyway)
-	// Return a default value for test builds
-	if testing.Testing() {
-		return newCapabilities(kubeVersionMajorTesting, kubeVersionMinorTesting)
-	}
+	return capabilitiesFromKubeBinaryVersion(k8sbaseversion.DefaultKubeBinaryVersion)
+}
 
-	vstr, err := helmversion.K8sIOClientGoModVersion()
+// capabilitiesFromKubeBinaryVersion builds capabilities whose Kubernetes
+// major/minor are derived from the given Kubernetes binary version (e.g. "1.36").
+func capabilitiesFromKubeBinaryVersion(binaryVersion string) (*Capabilities, error) {
+	v, err := semver.NewVersion(binaryVersion)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve k8s.io/client-go version: %w", err)
+		return nil, fmt.Errorf("unable to parse k8s.io/component-base Kubernetes client version %q: %w", binaryVersion, err)
 	}
 
-	v, err := semver.NewVersion(vstr)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse k8s.io/client-go version %q: %w", vstr, err)
-	}
-
-	kubeVersionMajor := v.Major() + 1
-	kubeVersionMinor := v.Minor()
-
-	return newCapabilities(kubeVersionMajor, kubeVersionMinor)
+	return newCapabilities(v.Major(), v.Minor())
 }
 
 func newCapabilities(kubeVersionMajor, kubeVersionMinor uint64) (*Capabilities, error) {

@@ -67,10 +67,8 @@ type nameTemplateTestCase struct {
 
 func createDummyResourceList(owned bool) kube.ResourceList {
 	obj := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dummyName",
-			Namespace: "spaced",
-		},
+		Name:      "dummyName",
+		Namespace: "spaced",
 	}
 
 	if owned {
@@ -115,10 +113,8 @@ func createDummyResourceList(owned bool) kube.ResourceList {
 
 func createDummyCRDList(owned bool) kube.ResourceList {
 	obj := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dummyName",
-			Namespace: "spaced",
-		},
+		Name:      "dummyName",
+		Namespace: "spaced",
 	}
 
 	if owned {
@@ -1069,7 +1065,7 @@ func TestUrlEqual(t *testing.T) {
 
 func TestInstallRun_UnreachableKubeClient(t *testing.T) {
 	config := actionConfigFixture(t)
-	failingKubeClient := kubefake.FailingKubeClient{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}, DummyResources: nil}
+	failingKubeClient := kubefake.FailingKubeClient{Out: io.Discard, DummyResources: nil}
 	failingKubeClient.ConnectionError = errors.New("connection refused")
 	config.KubeClient = &failingKubeClient
 
@@ -1111,7 +1107,7 @@ func TestInstallCRDs(t *testing.T) {
 
 func TestInstallCRDs_AlreadyExist(t *testing.T) {
 	dummyResources := createDummyCRDList(false)
-	failingKubeClient := kubefake.FailingKubeClient{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}, DummyResources: dummyResources}
+	failingKubeClient := kubefake.FailingKubeClient{Out: io.Discard, DummyResources: dummyResources}
 	mockError := &apierrors.StatusError{ErrStatus: metav1.Status{
 		Status: metav1.StatusFailure,
 		Reason: metav1.StatusReasonAlreadyExists,
@@ -1134,7 +1130,7 @@ func TestInstallCRDs_AlreadyExist(t *testing.T) {
 
 func TestInstallCRDs_KubeClient_BuildError(t *testing.T) {
 	config := actionConfigFixture(t)
-	failingKubeClient := kubefake.FailingKubeClient{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}, DummyResources: nil}
+	failingKubeClient := kubefake.FailingKubeClient{Out: io.Discard, DummyResources: nil}
 	failingKubeClient.BuildError = errors.New("build error")
 	config.KubeClient = &failingKubeClient
 	instAction := NewInstall(config)
@@ -1151,7 +1147,7 @@ func TestInstallCRDs_KubeClient_BuildError(t *testing.T) {
 
 func TestInstallCRDs_KubeClient_CreateError(t *testing.T) {
 	config := actionConfigFixture(t)
-	failingKubeClient := kubefake.FailingKubeClient{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}, DummyResources: nil}
+	failingKubeClient := kubefake.FailingKubeClient{Out: io.Discard, DummyResources: nil}
 	failingKubeClient.CreateError = errors.New("create error")
 	config.KubeClient = &failingKubeClient
 	instAction := NewInstall(config)
@@ -1168,7 +1164,7 @@ func TestInstallCRDs_KubeClient_CreateError(t *testing.T) {
 
 func TestInstallCRDs_WaiterError(t *testing.T) {
 	config := actionConfigFixture(t)
-	failingKubeClient := kubefake.FailingKubeClient{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}, DummyResources: nil}
+	failingKubeClient := kubefake.FailingKubeClient{Out: io.Discard, DummyResources: nil}
 	failingKubeClient.WaitError = errors.New("wait error")
 	failingKubeClient.BuildDummy = true
 	config.KubeClient = &failingKubeClient
@@ -1182,6 +1178,28 @@ func TestInstallCRDs_WaiterError(t *testing.T) {
 	crdsToInstall := mockChart.CRDObjects()
 
 	require.Error(t, instAction.installCRDs(crdsToInstall), "wait error")
+}
+
+// TestInstallCRDs_HookOnlyStrategyStillWaitsForEstablishment guards against
+// https://github.com/helm/helm/issues/32671: HookOnlyStrategy's waiter does not
+// wait on general resources, so installCRDs() must request a
+// StatusWatcherStrategy waiter for CRD establishment instead.
+func TestInstallCRDs_HookOnlyStrategyStillWaitsForEstablishment(t *testing.T) {
+	config := actionConfigFixture(t)
+	failingKubeClient := kubefake.FailingKubeClient{Out: io.Discard, BuildDummy: true}
+	config.KubeClient = &failingKubeClient
+	instAction := NewInstall(config)
+	instAction.WaitStrategy = kube.HookOnlyStrategy
+
+	mockFile := common.File{
+		Name: "crds/foo.yaml",
+		Data: []byte("hello"),
+	}
+	mockChart := buildChart(withFile(mockFile))
+	crdsToInstall := mockChart.CRDObjects()
+
+	require.NoError(t, instAction.installCRDs(crdsToInstall))
+	assert.Equal(t, []kube.WaitStrategy{kube.StatusWatcherStrategy}, failingKubeClient.RecordedWaitStrategies)
 }
 
 func TestCheckDependencies(t *testing.T) {

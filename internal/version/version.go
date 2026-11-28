@@ -17,14 +17,10 @@ limitations under the License.
 package version
 
 import (
-	"flag"
-	"fmt"
-	"log/slog"
 	"runtime"
 	"strings"
-	"testing"
 
-	"github.com/Masterminds/semver/v3"
+	k8sbaseversion "k8s.io/component-base/version"
 )
 
 var (
@@ -34,7 +30,7 @@ var (
 	//
 	// Increment major number for new feature additions and behavioral changes.
 	// Increment minor number for bug fixes and performance enhancements.
-	version = "v4.2"
+	version = "v4.3"
 
 	// metadata is extra build time data
 	metadata = ""
@@ -42,10 +38,6 @@ var (
 	gitCommit = ""
 	// gitTreeState is the state of the git tree
 	gitTreeState = ""
-)
-
-const (
-	kubeClientGoVersionTesting = "v1.20"
 )
 
 // BuildInfo describes the compile time information.
@@ -75,45 +67,27 @@ func GetUserAgent() string {
 	return "Helm/" + strings.TrimPrefix(GetVersion(), "v")
 }
 
+var (
+	// KubeClientVersion returns the Kubernetes version Helm was built against.
+	// Tests may override it for stable output.
+	KubeClientVersion = kubeBinaryVersion
+	// GoVersion returns the Go version Helm was built with.
+	// Tests may override it for stable output.
+	GoVersion = runtime.Version
+)
+
+// kubeBinaryVersion returns the k8s.io/component-base default binary version, prefixed with "v".
+func kubeBinaryVersion() string {
+	return "v" + k8sbaseversion.DefaultKubeBinaryVersion
+}
+
 // Get returns build info
 func Get() BuildInfo {
-	makeKubeClientVersionString := func() string {
-		// Test builds don't include debug info / module info
-		// (And even if they did, we probably want a stable version during tests anyway)
-		// Return a default value for test builds
-		if testing.Testing() {
-			return kubeClientGoVersionTesting
-		}
-
-		vstr, err := K8sIOClientGoModVersion()
-		if err != nil {
-			slog.Error("failed to retrieve k8s.io/client-go version", slog.Any("error", err))
-			return ""
-		}
-
-		v, err := semver.NewVersion(vstr)
-		if err != nil {
-			slog.Error("unable to parse k8s.io/client-go version", slog.String("version", vstr), slog.Any("error", err))
-			return ""
-		}
-
-		kubeClientVersionMajor := v.Major() + 1
-		kubeClientVersionMinor := v.Minor()
-
-		return fmt.Sprintf("v%d.%d", kubeClientVersionMajor, kubeClientVersionMinor)
-	}
-
-	v := BuildInfo{
+	return BuildInfo{
 		Version:           GetVersion(),
 		GitCommit:         gitCommit,
 		GitTreeState:      gitTreeState,
-		GoVersion:         runtime.Version(),
-		KubeClientVersion: makeKubeClientVersionString(),
+		GoVersion:         GoVersion(),
+		KubeClientVersion: KubeClientVersion(),
 	}
-
-	// HACK(bacongobbler): strip out GoVersion during a test run for consistent test output
-	if flag.Lookup("test.v") != nil {
-		v.GoVersion = ""
-	}
-	return v
 }

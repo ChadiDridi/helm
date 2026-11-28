@@ -19,12 +19,23 @@ package version
 import (
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	k8sbaseversion "k8s.io/component-base/version"
 )
 
-func TestK8sClientGoModVersion(t *testing.T) {
-	// Unfortunately, test builds don't include debug info / module info
-	// So we expect "K8sIOClientGoModVersion" to return error
-	_, err := K8sIOClientGoModVersion()
-	require.ErrorContains(t, err, "k8s.io/client-go not found in build info")
+func TestKubeBinaryVersion(t *testing.T) {
+	assert.NotEmpty(t, k8sbaseversion.DefaultKubeBinaryVersion)
+	v, err := semver.NewVersion(k8sbaseversion.DefaultKubeBinaryVersion)
+	require.NoError(t, err)
+
+	assert.Equal(t, uint64(1), v.Major())
+	assert.Equal(t, "v"+k8sbaseversion.DefaultKubeBinaryVersion, kubeBinaryVersion())
+}
+
+func TestGet(t *testing.T) {
+	v := Get()
+	assert.Equal(t, kubeBinaryVersion(), v.KubeClientVersion)
+	assert.NotEmpty(t, v.GoVersion)
 }
